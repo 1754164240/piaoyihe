@@ -4,3 +4,5 @@ Pillow>=10.0.0
 requests>=2.31.0
 openpyxl>=3.1.0
 mcp>=1.6.0
+# OFD 渲染依赖；官方仅提供 Windows/Linux 平台 wheel，macOS 端自动跳过（OFD 能力降级）
+ofd2pdf>=0.0.2; sys_platform != 'darwin'

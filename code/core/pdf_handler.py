@@ -12,6 +12,7 @@ import time
 import tempfile
 import shutil
 from .invoice_extractors.factory import InvoiceExtractorFactory
+from .ofd_converter import OFD_EXTENSIONS, is_ofd_file, render_ofd_pages, OfdConversionError
 
 # 支持的图片文件扩展名（图片文件不提取发票字段，仅参与合并）
 IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg'}
@@ -30,7 +31,29 @@ def is_image_file(file_path):
     返回值:
         bool: 是支持的图片文件返回 True，否则返回 False
     """
+    if not isinstance(file_path, str) or not file_path:
+        return False
     return os.path.splitext(file_path)[1].lower() in IMAGE_EXTENSIONS
+
+
+def is_supported_file(file_path):
+    """
+    判断文件是否为支持处理的文件（PDF / 图片 / OFD）
+
+    功能描述:
+        统一判断文件是否可参与合并，覆盖 PDF、图片以及 OFD 三类文件，
+        供拖放、目录递归、文件对话框等入口复用。
+
+    参数:
+        file_path: 文件路径
+
+    返回值:
+        bool: 属于支持类型返回 True，否则返回 False
+    """
+    if not isinstance(file_path, str) or not file_path:
+        return False
+    ext = os.path.splitext(file_path)[1].lower()
+    return ext == '.pdf' or ext in IMAGE_EXTENSIONS or ext in OFD_EXTENSIONS
 
 
 class PDFHandler:
@@ -233,53 +256,65 @@ class PDFHandler:
                 )
 
         for pdf_path in pdf_paths:
-            # 图片文件：作为单个排版单元插入
+            # 图片 / OFD 文件：作为排版单元插入（OFD 先渲染为图片，每页一个单元）
             if is_image_file(pdf_path):
-                prepare_output_page()
+                unit_images = [pdf_path]
+            elif is_ofd_file(pdf_path):
+                try:
+                    unit_images = render_ofd_pages(pdf_path)
+                except OfdConversionError as exc:
+                    print(f"OFD 转换失败，已跳过: {pdf_path} - {exc}")
+                    unit_images = []
+            else:
+                unit_images = None
 
-                # 计算当前图片在新页中的位置
-                row = page_count // layout_config['cols']
-                col = page_count % layout_config['cols']
+            if unit_images is not None:
+                for image_path in unit_images:
+                    prepare_output_page()
 
-                # 计算每个单元格的尺寸（基于可用区域）
-                cell_width = available_width / layout_config['cols']
-                cell_height = available_height / layout_config['rows']
+                    # 计算当前图片在新页中的位置
+                    row = page_count // layout_config['cols']
+                    col = page_count % layout_config['cols']
 
-                # 计算位置（加上四边页边距偏移）
-                x = margin_left + col * cell_width
-                y = margin_top + row * cell_height
+                    # 计算每个单元格的尺寸（基于可用区域）
+                    cell_width = available_width / layout_config['cols']
+                    cell_height = available_height / layout_config['rows']
 
-                # 检查是否需要旋转
-                rotate = layout_config.get('rotate', 0)
-                gap = 5  # 发票之间的间隙
+                    # 计算位置（加上四边页边距偏移）
+                    x = margin_left + col * cell_width
+                    y = margin_top + row * cell_height
 
-                # 打开图片（含旋转处理）
-                pix = self._open_image_pixmap(pdf_path, rotate)
+                    # 检查是否需要旋转
+                    rotate = layout_config.get('rotate', 0)
+                    gap = 5  # 发票之间的间隙
 
-                img_width = pix.width
-                img_height = pix.height
+                    # 打开图片（含旋转处理）
+                    pix = self._open_image_pixmap(image_path, rotate)
 
-                scale_x = (cell_width - gap) / img_width
-                scale_y = (cell_height - gap) / img_height
-                scale = min(scale_x, scale_y)
+                    img_width = pix.width
+                    img_height = pix.height
 
-                final_width = img_width * scale
-                final_height = img_height * scale
+                    scale_x = (cell_width - gap) / img_width
+                    scale_y = (cell_height - gap) / img_height
+                    scale = min(scale_x, scale_y)
 
-                offset_x = (cell_width - final_width) / 2
-                offset_y = (cell_height - final_height) / 2
+                    final_width = img_width * scale
+                    final_height = img_height * scale
 
-                # 创建目标矩形（居中放置）
-                target_rect = fitz.Rect(
-                    x + offset_x,
-                    y + offset_y,
-                    x + offset_x + final_width,
-                    y + offset_y + final_height
-                )
+                    offset_x = (cell_width - final_width) / 2
+                    offset_y = (cell_height - final_height) / 2
 
-                # 插入图片
-                current_page.insert_image(target_rect, pixmap=pix)
-                page_count += 1
+                    # 创建目标矩形（居中放置）
+                    target_rect = fitz.Rect(
+                        x + offset_x,
+                        y + offset_y,
+                        x + offset_x + final_width,
+                        y + offset_y + final_height
+                    )
+
+                    # 插入图片
+                    current_page.insert_image(target_rect, pixmap=pix)
+                    page_count += 1
 
                 if file_processed_callback:
                     file_processed_callback()

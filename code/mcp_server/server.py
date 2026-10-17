@@ -47,12 +47,13 @@ def merge_invoices(pdf_paths: List[str], output_path: str,
                    margins: Optional[Dict[str, int]] = None,
                    crop_marks: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
-    MCP Tool：合并多个 PDF 发票为指定布局
+    MCP Tool：合并多个 PDF / 图片 / OFD 发票为指定布局
 
     支持自定义页边距和裁切线设置，便于实体裁剪和排版。
+    OFD 文件会先渲染为图片再参与合并，无需解析其内部字段。
 
     参数:
-        pdf_paths: 待合并的 PDF 文件路径列表
+        pdf_paths: 待合并的文件路径列表，支持 PDF、图片（png/jpg/jpeg）与 OFD
         output_path: 合并后的输出文件路径
         layout: 布局配置字典，包含 orientation、rows、cols、rotate
         mode: 合并模式，可选 "普通" 或 "图像"，默认 "普通"

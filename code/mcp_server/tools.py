@@ -10,7 +10,7 @@ import logging
 import os
 from typing import List, Dict, Any, Optional
 
-from core.pdf_handler import PDFHandler
+from core.pdf_handler import PDFHandler, is_supported_file
 from core.invoice_service import InvoiceService
 from .config import SERVER_NAME, SERVER_VERSION
 
@@ -34,10 +34,11 @@ def _new_pdf_handler() -> PDFHandler:
 
 def _validate_pdf_paths(pdf_paths: Any) -> tuple[bool, str]:
     """
-    校验 PDF 路径列表
+    校验待处理文件路径列表
 
     功能描述:
-        确保传入的是列表/元组，且每个元素为存在并以 .pdf/.PDF 结尾的字符串路径。
+        确保传入的是列表/元组，且每个元素为存在且类型受支持的字符串路径
+        （PDF / 图片 / OFD）。
 
     参数:
         pdf_paths: 待校验的路径集合
@@ -54,8 +55,8 @@ def _validate_pdf_paths(pdf_paths: Any) -> tuple[bool, str]:
     for path in pdf_paths:
         if not isinstance(path, str):
             return False, f"路径必须是字符串: {path!r}"
-        if not path.lower().endswith(".pdf"):
-            return False, f"仅支持 PDF 文件: {path}"
+        if not is_supported_file(path):
+            return False, f"仅支持 PDF、图片或 OFD 文件: {path}"
         if not os.path.exists(path):
             return False, f"文件不存在: {path}"
 
