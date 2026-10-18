@@ -3,11 +3,20 @@
 import sys
 import os
 
+from PyInstaller.utils.hooks import collect_data_files
+
+# ofd2pdf 内置的 ofd-cli 可执行文件（OFD 渲染依赖）
+# macOS 官方未提供平台 wheel，缺失时打包不影响其余功能（OFD 能力降级）
+try:
+    ofd2pdf_datas = collect_data_files('ofd2pdf')
+except Exception:
+    ofd2pdf_datas = []
+
 block_cipher = None
 
 a = Analysis(
     ['code/main.py'],
-    pathex=['/Users/xieyonggao/Documents/self/minipro/invoiceTool', '/Users/xieyonggao/Documents/self/minipro/invoiceTool/code'],
+    pathex=[r'D:\minipro\piaoyihe\piaoyihe', r'D:\minipro\piaoyihe\piaoyihe\code'],
     binaries=[],
     datas=[
         ('code/res/logo3.png', 'res'),
@@ -23,7 +32,8 @@ a = Analysis(
         ('code/res/icons/箭头下_arrow-down.svg', 'res/icons'),
         ('code/res/icons/铅笔_pencil.svg', 'res/icons'),        
         ('code/res/icons/下载_download-four.svg', 'res/icons'),        
-        ('code/res/icons/预览-打开_preview-open.svg', 'res/icons')
+        ('code/res/icons/预览-打开_preview-open.svg', 'res/icons'),
+        *ofd2pdf_datas
     ],
     hiddenimports=[
         # PySide6 核心模块
@@ -75,6 +85,20 @@ a = Analysis(
         'core.invoice_extractors.toll_invoice',
         'core.invoice_service',
         'core.rename_engine',
+
+        # OFD 渲染依赖（ofd2pdf 及其内置 ofd-cli）
+        'ofd2pdf',
+        'ofd2pdf.ofd_cli',
+        'ofd2pdf.converter',
+
+        # GUI 界面模块（namespace 包无法被自动收集，必须显式列出）
+        'ui',
+        'ui.main_frame',
+        'ui.file_list',
+        'ui.rename_dialog',
+        'ui.merge_worker',
+        'ui.file_load_worker',
+        'ui.theme',
 
         # SSE 传输依赖
         'uvicorn',

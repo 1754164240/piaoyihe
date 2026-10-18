@@ -19,6 +19,7 @@ from PySide6.QtCore import Qt, Signal, QUrl, QTimer, QPoint, QSize
 from PySide6.QtGui import QDesktopServices, QAction, QPixmap, QCursor, QIcon, QColor
 from core.invoice_service import InvoiceService
 from core.pdf_handler import is_image_file
+from core.ofd_converter import is_ofd_file, render_ofd_pages
 from ui.theme import AppTheme
 
 
@@ -85,9 +86,17 @@ class PreviewPopup(QFrame):
         self.current_file = file_path
 
         try:
-            # 图片文件直接用 QPixmap 加载预览
+            # 图片文件直接用 QPixmap 加载；OFD 文件先渲染为图片再加载
+            pixmap = None
             if is_image_file(file_path):
                 pixmap = QPixmap(file_path)
+            elif is_ofd_file(file_path):
+                pages = render_ofd_pages(file_path)
+                if not pages:
+                    raise ValueError("OFD 未渲染出页面")
+                pixmap = QPixmap(pages[0])
+
+            if pixmap is not None:
                 if pixmap.isNull():
                     raise ValueError("图片加载失败")
 
@@ -822,8 +831,8 @@ class FileListPanel(QWidget):
         mod_time = os.path.getmtime(file_path)
         mod_time_str = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(mod_time))
 
-        # 图片文件跳过发票字段提取，字段填缺省值
-        if is_image_file(file_path):
+        # 图片 / OFD 文件跳过发票字段提取，字段填缺省值
+        if is_image_file(file_path) or is_ofd_file(file_path):
             return {
                 'name': file_name,
                 'amount': 0.0,

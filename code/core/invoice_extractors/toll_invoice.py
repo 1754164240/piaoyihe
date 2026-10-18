@@ -25,27 +25,30 @@ class TollInvoiceExtractor(InvoiceExtractor):
 
     def extract_amount(self) -> float:
         """
-        提取金额
+        提取金额（价税合计）
 
-        提取策略：
-        1. 匹配"金额"字段
-        2. 匹配"价税合计"字段
-        3. 匹配"¥"符号后的数字
+        提取策略（按优先级）：
+        1. 匹配"价税合计（大写）… （小写）¥87.95"中的小写金额（新式通行费电子发票）
+        2. 匹配"金额"字段（旧式通行费发票）
+        3. 匹配"价税合计"字段
+        4. 匹配"¥"符号后的数字（兜底）
 
         Returns:
             float: 金额，失败返回0.0
         """
         patterns = [
-            r'金额[:：]\s*[¥￥]?\s*(\d+(?:\.\d+)?)',
-            r'价税合计[:：]\s*[¥￥]?\s*(\d+(?:\.\d+)?)',
-            r'[¥￥]\s*(\d+(?:\.\d+)?)',
+            # 新式通行费电子发票（普通发票）：价税合计（大写） 捌拾柒圆玖角伍分 （小写） ¥87.95
+            r'（小写）\s*[¥￥]?\s*(\d+(?:,\d{3})*(?:\.\d+)?)',
+            r'金额[:：]\s*[¥￥]?\s*(\d+(?:,\d{3})*(?:\.\d+)?)',
+            r'价税合计[:：]\s*[¥￥]?\s*(\d+(?:,\d{3})*(?:\.\d+)?)',
+            r'[¥￥]\s*(\d+(?:,\d{3})*(?:\.\d+)?)',
         ]
 
         for pattern in patterns:
             match = re.search(pattern, self._text)
             if match:
                 try:
-                    return float(match.group(1))
+                    return float(match.group(1).replace(',', ''))
                 except ValueError:
                     pass
 
@@ -201,25 +204,51 @@ class TollInvoiceExtractor(InvoiceExtractor):
         """
         提取税额
 
-        提取策略：
-        1. 匹配"税额"字段
-        2. 匹配"税率"字段并计算
-        3. 返回0.0
+        提取策略（按优先级）：
+        1. 匹配"税率/征收率 + 税额"表格行（如 3% 2.56），支持多行合计
+        2. 匹配"税额"字段
+        3. 匹配"合计税额"字段
+        4. 返回0.0
 
         Returns:
             float: 提取的税额，无则返回0.0
         """
-        # 策略1：匹配"税额"字段
+        total_amount = self.extract_amount()
+
+        # 策略1：匹配"税率/征收率 + 税额"表格行
+        # 新式通行费电子发票表格行如：145.40   3%   4.36
+        tax_rate_patterns = [
+            r'(?:-?\d+(?:,\d{3})*(?:\.\d+)?)\s+(\d+(?:\.\d+)?)%\s+(?:CNY\s+)?[¥￥]?\s*(-?\d+(?:,\d{3})*(?:\.\d+)?)',
+            r'(\d+(?:\.\d+)?)%\s+(?:CNY\s+)?[¥￥]?\s*(-?\d+(?:,\d{3})*(?:\.\d+)?)',
+        ]
+        tax_values = set()
+        for tax_rate_pattern in tax_rate_patterns:
+            matches = re.findall(tax_rate_pattern, self._text)
+            for _rate_str, tax_str in matches:
+                try:
+                    tax = float(tax_str.replace(',', ''))
+                except ValueError:
+                    continue
+                # 合理性校验：税额通常小于价税合计
+                if total_amount > 0 and abs(tax) < total_amount:
+                    tax_values.add(tax)
+                elif total_amount == 0:
+                    tax_values.add(tax)
+        if tax_values:
+            # 返回所有税额的合计（支持多行发票和折扣行自动抵消）
+            return sum(tax_values)
+
+        # 策略2：匹配"税额"字段
         tax_patterns = [
-            r'税\s*额[:：]\s*[¥￥]?\s*(\d+(?:\.\d+)?)',
-            r'合\s*计\s*税\s*额[:：]\s*[¥￥]?\s*(\d+(?:\.\d+)?)',
+            r'税\s*额[:：]\s*[¥￥]?\s*(-?\d+(?:,\d{3})*(?:\.\d+)?)',
+            r'合\s*计\s*税\s*额[:：]\s*[¥￥]?\s*(-?\d+(?:,\d{3})*(?:\.\d+)?)',
         ]
 
         for pattern in tax_patterns:
             match = re.search(pattern, self._text)
             if match:
                 try:
-                    return float(match.group(1))
+                    return float(match.group(1).replace(',', ''))
                 except ValueError:
                     pass
 
